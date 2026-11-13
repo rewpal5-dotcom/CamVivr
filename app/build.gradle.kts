@@ -10,8 +10,8 @@ android {
         applicationId = "com.camvivr.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "5.0"
+        versionCode = 7
+        versionName = "5.1"
     }
 
     signingConfigs {

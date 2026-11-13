@@ -64,7 +64,16 @@ public class OverlayPanelService extends Service {
                 .setContentText("Gol button se media control karein")
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setContentIntent(pi).setOngoing(true);
-        startForeground(9, b.build());
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(9, b.build(),
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else {
+                startForeground(9, b.build());
+            }
+        } catch (Exception e) {
+            Engine.get().fail("Foreground service start fail: " + e.getMessage());
+        }
     }
 
     /* ---------------- gol floating button ---------------- */

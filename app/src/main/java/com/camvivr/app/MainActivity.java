@@ -75,6 +75,11 @@ public class MainActivity extends Activity {
         });
 
         registerPanelReceiver();
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                   != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try { requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 91); } catch (Exception ignored) { }
+        }
         render();
     }
 
@@ -239,9 +244,18 @@ public class MainActivity extends Activity {
             n.setLayoutParams(UiKit.weight(1f));
             n.setOnClickListener(v -> openUri(Uri.parse(m[1]), m[2]));
             r.addView(n);
+
+            TextView use = UiKit.body(this, "Use", 12f, UiKit.BLUE_L);
+            use.setPadding(dp(12), 0, dp(12), 0);
+            use.setOnClickListener(v -> openUri(Uri.parse(m[1]), m[2]));
+            r.addView(use);
             TextView del = UiKit.body(this, "✕", 14f, UiKit.RED);
             del.setPadding(dp(14), 0, 0, 0);
-            del.setOnClickListener(v -> { store.removeSource(m[1]); go("media"); });
+            del.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                    .setTitle("Hatana hai?")
+                    .setMessage(m[0])
+                    .setPositiveButton("Hatao", (d, w) -> { store.removeSource(m[1]); go("media"); })
+                    .setNegativeButton("Nahi", null).show());
             r.addView(del);
             list.addView(r);
         }
@@ -351,8 +365,14 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Permission dein, phir dobara dabayein", Toast.LENGTH_LONG).show();
             return;
         }
-        startService(new Intent(this, OverlayPanelService.class));
-        Toast.makeText(this, "Floating button ON", Toast.LENGTH_SHORT).show();
+        try {
+            Intent svc = new Intent(this, OverlayPanelService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(svc);
+            else startService(svc);
+            Toast.makeText(this, "Floating button ON — screen par gol button dekhein", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Service start nahi hui: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
         render();
     }
 
@@ -393,14 +413,32 @@ public class MainActivity extends Activity {
             store.setSource(type);
             if (type.equals("image")) store.setImageUri(uri.toString());
             else store.setVideoUri(uri.toString());
-            String name = uri.getLastPathSegment();
-            store.addSource(name == null ? type : name, uri.toString(), type);
+            String name = displayName(uri);
+            store.addSource(name, uri.toString(), type);
             if (type.equals("video")) preview.play();
             Toast.makeText(this, "Load ho gaya", Toast.LENGTH_SHORT).show();
             go("media");
         } else {
             Toast.makeText(this, "Ye file khul nahi payi", Toast.LENGTH_LONG).show();
         }
+    }
+
+    /** Gallery file ka asli naam. */
+    private String displayName(Uri uri) {
+        try {
+            android.database.Cursor c = getContentResolver().query(uri, null, null, null, null);
+            if (c != null) {
+                int idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                if (c.moveToFirst() && idx >= 0) {
+                    String n = c.getString(idx);
+                    c.close();
+                    if (n != null && !n.isEmpty()) return n;
+                }
+                c.close();
+            }
+        } catch (Exception ignored) { }
+        String p = uri.getLastPathSegment();
+        return p == null ? "media" : p;
     }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
