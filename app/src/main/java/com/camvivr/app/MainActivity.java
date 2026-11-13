@@ -156,6 +156,11 @@ public class MainActivity extends Activity {
         c2.addView(open2, UiKit.matchWrap(12));
         box.addView(c2);
 
+        Button share = UiKit.button(this, "📺  Screen-share mode (call mein dikhane ke liye)",
+                UiKit.BLUE, Color.WHITE);
+        share.setOnClickListener(v -> screenShareMode());
+        box.addView(share, UiKit.matchWrap(4));
+
         /* 3 — Settings */
         LinearLayout c3 = UiKit.card(this);
         c3.addView(UiKit.title(this, "3.  Settings", 17));
@@ -497,6 +502,94 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) { }
         String p = uri.getLastPathSegment();
         return p == null ? "media" : p;
+    }
+
+    /** Screen-share mode — call ke dauran video/photo poore screen par (100% working). */
+    private void screenShareMode() {
+        if (store.source().equals("none")) {
+            Toast.makeText(this, "Pehle video ya photo upload karein", Toast.LENGTH_LONG).show();
+            go("media");
+            return;
+        }
+        final FrameLayout fs = new FrameLayout(this);
+        fs.setBackgroundColor(Color.BLACK);
+
+        Preview big = new Preview(this);
+        big.zoom = store.zoom() / 100f;
+        big.rotationDeg = store.rotation();
+        big.flipH = store.flipH();
+        big.flipV = store.flipV();
+        big.brightness = store.brightness();
+        big.contrast = store.contrast();
+        big.eyesOn = store.eyesOn();
+        big.mouthOn = store.mouthOn();
+        big.autoBlink = store.autoBlink();
+        big.blinkInterval = store.blinkInterval();
+        big.animSpeed = store.animSpeed();
+
+        if (store.source().equals("image") && !store.imageUri().isEmpty())
+            big.loadImage(Uri.parse(store.imageUri()));
+        else if (!store.videoUri().isEmpty()) {
+            big.loadVideo(Uri.parse(store.videoUri()));
+            big.setLoop(true);
+        }
+
+        fs.addView(big, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        /* chhota exit button — tap karne par dikhta hai */
+        final TextView exit = UiKit.body(this, "✕  Band karein", 13f, Color.WHITE);
+        exit.setBackground(UiKit.round(0xCC000000, 20, 0x66FFFFFF));
+        exit.setPadding(dp(18), dp(10), dp(18), dp(10));
+        exit.setAlpha(0.35f);
+        exit.setOnClickListener(v -> {
+            big.release();
+            showSystemBars();
+            render();
+        });
+        FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        elp.gravity = Gravity.TOP | Gravity.START;
+        elp.setMargins(dp(14), dp(40), 0, 0);
+        fs.addView(exit, elp);
+
+        root.removeAllViews();
+        root.addView(fs, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        hideSystemBars();
+        Toast.makeText(this, "Ab call mein 'Share screen' karein — video poore screen par chalega",
+                Toast.LENGTH_LONG).show();
+    }
+
+    private void hideSystemBars() {
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsetsController c = getWindow().getInsetsController();
+                if (c != null) {
+                    c.hide(android.view.WindowInsets.Type.systemBars());
+                    c.setSystemBarsBehavior(
+                            android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            } else {
+                getWindow().getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            }
+        } catch (Exception ignored) { }
+    }
+
+    private void showSystemBars() {
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsetsController c = getWindow().getInsetsController();
+                if (c != null) c.show(android.view.WindowInsets.Type.systemBars());
+            } else {
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+            }
+        } catch (Exception ignored) { }
     }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
