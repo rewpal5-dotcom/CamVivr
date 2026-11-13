@@ -69,7 +69,8 @@ public class MainActivity extends Activity {
         switch (which) {
             case "camera": v = buildCamera(); break;
             case "control": v = buildControl(); break;
-            case "streaming": v = buildStreaming(); break;
+            case "virtual": v = buildVirtual(); break;
+            case "media": v = buildMedia(); break;
             case "settings": v = buildSettings(); break;
             default: v = buildHome(); break;
         }
@@ -81,7 +82,7 @@ public class MainActivity extends Activity {
         navBar.setBackgroundColor(UiKit.BG2);
         navBar.setPadding(0, 8, 0, 12);
         String[][] items = {{"home", "Home"}, {"camera", "Camera"}, {"control", "Control"},
-                {"streaming", "Streaming"}, {"settings", "Settings"}};
+                {"virtual", "Virtual"}, {"settings", "Settings"}};
         for (String[] it : items) {
             final String id = it[0];
             TextView t = new TextView(this);
@@ -284,9 +285,13 @@ public class MainActivity extends Activity {
         vr.addView(smallBtn("⏸", () -> preview.pause()));
         vr.addView(smallBtn("■", () -> preview.stop()));
         vr.addView(smallBtn("↻", () -> { preview.stop(); preview.play(); }));
+        vr.addView(smallBtn("0.5x", () -> preview.setSpeed(0.5f)));
         vr.addView(smallBtn("1x", () -> preview.setSpeed(1f)));
+        vr.addView(smallBtn("1.5x", () -> preview.setSpeed(1.5f)));
         vr.addView(smallBtn("2x", () -> preview.setSpeed(2f)));
+        vr.addView(smallBtn("🔇", () -> { if (preview != null) preview.mute(); }));
         vid.addView(vr);
+        vid.addView(slider("Seek %", 0, 0, 100, v -> { if (preview != null) preview.seekPercent(v); }));
         box.addView(vid);
 
         /* image/video processing */
@@ -422,44 +427,125 @@ public class MainActivity extends Activity {
         show("control");
     }
 
-    /* ================= STREAMING ================= */
-    private View buildStreaming() {
+    /* ================= VIRTUAL CAMERA ================= */
+    private View buildVirtual() {
         LinearLayout box = UiKit.column(this);
-        box.addView(UiKit.title(this, "Streaming", 20));
-        box.addView(UiKit.muted(this, "RTMP live streaming"));
+        box.addView(UiKit.title(this, "Virtual Camera", 20));
+        box.addView(UiKit.muted(this, "Aapka media, camera input ki tarah"));
 
-        LinearLayout c = UiKit.card(this);
-        c.addView(UiKit.title(this, "Server", 15));
-        EditText url = new EditText(this);
-        url.setHint("rtmp://server/app");
-        url.setText(store.rtmpUrl());
-        url.setTextColor(UiKit.TEXT);
-        url.setHintTextColor(UiKit.MUTED);
-        c.addView(url);
-        EditText key = new EditText(this);
-        key.setHint("Stream key");
-        key.setText(store.streamKey());
-        key.setTextColor(UiKit.TEXT);
-        key.setHintTextColor(UiKit.MUTED);
-        c.addView(key);
-        Button save = UiKit.button(this, "Save config", 0xFF1B2A3E, UiKit.TEXT);
-        save.setOnClickListener(v -> {
-            store.setRtmpUrl(url.getText().toString().trim());
-            store.setStreamKey(key.getText().toString().trim());
-            Toast.makeText(this, "Config save", Toast.LENGTH_SHORT).show();
-        });
-        c.addView(save, UiKit.matchWrap(10));
-        box.addView(c);
+        LinearLayout st = UiKit.card(this);
+        st.addView(UiKit.title(this, "Output status", 15));
 
-        LinearLayout info = UiKit.card(this);
-        info.addView(UiKit.title(this, "Status", 15));
-        info.addView(UiKit.body(this,
-                "RTMP streaming is not available in this build.\n\n"
-              + "Kyun: RTMP ke liye ek video encoder + protocol stack chahiye. "
-              + "Is APK mein woh include nahi hai, isliye main fake 'Connected' status nahi dikhata.\n\n"
-              + "Jo kaam karta hai: photo/video preview, face animation, processing, floating panel.",
+        boolean media = !store.source().equals("none");
+        boolean supported = ExternalCamera.supported();
+        boolean overlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this);
+
+        st.addView(vrow("Media", media ? "Selected (" + sourceLabel() + ")" : "Media Not Selected", media));
+        st.addView(vrow("Device support", supported ? "Supported" : "Device Not Supported", supported));
+        st.addView(vrow("Overlay permission", overlay ? "Granted" : "Permission Required", overlay));
+        st.addView(vrow("Output", "Inactive", false));
+        box.addView(st);
+
+        LinearLayout why = UiKit.card(this);
+        why.addView(UiKit.title(this, "Kyun 'Not Supported'?", 15));
+        why.addView(UiKit.body(this, ExternalCamera.reason() +
+                "\n\nIska matlab: WhatsApp/Instagram ke camera mein aapka media seedha nahi ja sakta. "
+              + "Jo apps '100% virtual camera' ka daava karte hain, unke liye root ya system access chahiye hota hai.",
                 13f, UiKit.MUTED));
-        box.addView(info);
+        box.addView(why);
+
+        LinearLayout work = UiKit.card(this);
+        work.addView(UiKit.title(this, "Jo aaj kaam karta hai", 15));
+        Button share = UiKit.button(this, "📺  Screen-share mode (call ke liye)", UiKit.BLUE, Color.WHITE);
+        share.setOnClickListener(v -> screenShareMode());
+        work.addView(share, UiKit.matchWrap(8));
+        work.addView(UiKit.body(this,
+                "Video call ke waqt 'Share screen' chunein — saamne wale ko aapka video dikhega. "
+              + "Ye bina root, bina system permission, abhi kaam karta hai.",
+                12.5f, UiKit.MUTED));
+        Button panel = UiKit.button(this, "🎛  Floating controls chalu karein", 0xFF1B2A3E, UiKit.TEXT);
+        panel.setOnClickListener(v -> toggleFloating());
+        work.addView(panel, UiKit.matchWrap(10));
+        box.addView(work);
+
+        LinearLayout rootPath = UiKit.card(this);
+        rootPath.addView(UiKit.title(this, "Asli virtual camera (root)", 15));
+        rootPath.addView(UiKit.body(this,
+                "Agar phone rooted hai (Magisk), to camera HAL hook karke asli virtual camera "
+              + "banaya ja sakta hai — ye alag module hota hai, normal APK nahi. "
+              + "Bina root ke ye possible nahi hai, isliye main is app mein fake button nahi banata.",
+                13f, UiKit.MUTED));
+        box.addView(rootPath);
+
+        return padded(UiKit.scroll(this, box));
+    }
+
+    private LinearLayout vrow(String name, String value, boolean ok) {
+        LinearLayout r = UiKit.row(this);
+        r.setPadding(0, 10, 0, 0);
+        TextView n = UiKit.body(this, name, 13f, UiKit.MUTED);
+        n.setLayoutParams(UiKit.weight(1f));
+        r.addView(n);
+        TextView v = UiKit.body(this, value, 13f, ok ? UiKit.GREEN : UiKit.AMBER);
+        v.setTypeface(null, android.graphics.Typeface.BOLD);
+        r.addView(v);
+        return r;
+    }
+
+    /* ================= MY MEDIA ================= */
+    private View buildMedia() {
+        LinearLayout box = UiKit.column(this);
+        box.addView(UiKit.title(this, "My Media", 20));
+        box.addView(UiKit.muted(this, "Aapke chune hue photo/video"));
+
+        LinearLayout add = UiKit.row(this);
+        Button img = UiKit.button(this, "🖼  Photo", UiKit.BLUE, Color.WHITE);
+        img.setLayoutParams(UiKit.weight(1f));
+        img.setOnClickListener(v -> pick(REQ_IMAGE, "image/*"));
+        add.addView(img);
+        add.addView(UiKit.spacer(this, 12, 1));
+        Button vid = UiKit.button(this, "🎬  Video", 0xFF1B2A3E, UiKit.TEXT);
+        vid.setLayoutParams(UiKit.weight(1f));
+        vid.setOnClickListener(v -> pick(REQ_VIDEO, "video/*"));
+        add.addView(vid);
+        box.addView(add, UiKit.matchWrap(4));
+
+        java.util.List<String[]> list = store.sources();
+        if (list.isEmpty()) {
+            LinearLayout c = UiKit.card(this);
+            c.addView(UiKit.muted(this, "Abhi koi media nahi — upar se photo/video chunein"));
+            box.addView(c);
+        }
+        for (final String[] m : list) {
+            LinearLayout c = UiKit.card(this);
+            LinearLayout top = UiKit.row(this);
+            TextView name = UiKit.title(this, m[0], 14f);
+            name.setLayoutParams(UiKit.weight(1f));
+            top.addView(name);
+            TextView type = UiKit.body(this, m[2].toUpperCase(), 11f, UiKit.BLUE_L);
+            top.addView(type);
+            c.addView(top);
+
+            LinearLayout row = UiKit.row(this);
+            row.setPadding(0, 12, 0, 0);
+            Button use = UiKit.button(this, "Use", 0xFF123542, UiKit.BLUE_L);
+            use.setLayoutParams(UiKit.weight(1f));
+            use.setOnClickListener(v -> openUri(Uri.parse(m[1]), m[2]));
+            row.addView(use);
+            row.addView(UiKit.spacer(this, 10, 1));
+            Button rep = UiKit.button(this, "Replace", 0xFF1B2A3E, UiKit.TEXT);
+            rep.setLayoutParams(UiKit.weight(1f));
+            rep.setOnClickListener(v -> pick(m[2].equals("image") ? REQ_IMAGE : REQ_VIDEO,
+                    m[2].equals("image") ? "image/*" : "video/*"));
+            row.addView(rep);
+            row.addView(UiKit.spacer(this, 10, 1));
+            Button del = UiKit.button(this, "🗑", 0xFF3A1E22, UiKit.RED);
+            del.setLayoutParams(UiKit.weight(0.6f));
+            del.setOnClickListener(v -> { store.removeSource(m[1]); show("media"); });
+            row.addView(del);
+            c.addView(row);
+            box.addView(c);
+        }
 
         return padded(UiKit.scroll(this, box));
     }

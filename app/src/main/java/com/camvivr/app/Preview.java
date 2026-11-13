@@ -138,6 +138,20 @@ public class Preview extends FrameLayout {
     public int duration() { return (player != null && prepared) ? player.getDuration() : 0; }
     public int position() { return (player != null && prepared) ? player.getCurrentPosition() : 0; }
     public void setLoop(boolean loop) { if (player != null) player.setLooping(loop); }
+
+    private boolean muted = false;
+    public void mute() {
+        muted = !muted;
+        if (player != null) {
+            try { player.setVolume(muted ? 0f : 1f, muted ? 0f : 1f); } catch (Exception ignored) { }
+        }
+    }
+
+    public void seekPercent(int pct) {
+        if (player != null && prepared && mediaDurationMs > 0) {
+            player.seekTo((int) (mediaDurationMs * Math.max(0, Math.min(100, pct)) / 100.0));
+        }
+    }
     public void setSpeed(float s) {
         if (player == null || !prepared) return;
         try {
