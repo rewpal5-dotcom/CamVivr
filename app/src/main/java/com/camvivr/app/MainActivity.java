@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
     private Store store;
     private Preview preview;
     private String tab = "home";
+    private boolean loopOn = true;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -39,6 +40,19 @@ public class MainActivity extends Activity {
         root = new FrameLayout(this);
         root.setBackgroundColor(UiKit.BG);
         setContentView(root);
+        Engine.get().setControl(new Engine.MediaControl() {
+            public void play() { if (preview != null) preview.play(); Engine.get().set(Engine.State.PLAYING); }
+            public void pause() { if (preview != null) preview.pause(); Engine.get().set(Engine.State.PAUSED); }
+            public void stop() { if (preview != null) preview.stop(); Engine.get().set(Engine.State.STOPPED); }
+            public void restart() { if (preview != null) { preview.stop(); preview.play(); } }
+            public void toggleLoop() {
+                if (preview != null) { loopOn = !loopOn; preview.setLoop(loopOn);
+                    Toast.makeText(MainActivity.this, "Loop: " + (loopOn ? "ON" : "OFF"), Toast.LENGTH_SHORT).show(); }
+            }
+            public void next() { cycleSource(1); }
+            public void previous() { cycleSource(-1); }
+            public boolean isPlaying() { return Engine.get().state() == Engine.State.PLAYING; }
+        });
         show("home");
     }
 
@@ -236,6 +250,10 @@ public class MainActivity extends Activity {
         pickVid.setOnClickListener(v -> pick(REQ_VIDEO, "video/*"));
         srcRow.addView(pickVid);
         box.addView(srcRow);
+
+        Button share = UiKit.button(this, "📺  Screen-share mode (call ke liye)", 0xFF1B2A3E, UiKit.TEXT);
+        share.setOnClickListener(v -> screenShareMode());
+        box.addView(share, UiKit.matchWrap(10));
 
         /* source manager */
         LinearLayout sm = UiKit.card(this);
@@ -569,6 +587,59 @@ public class MainActivity extends Activity {
                 Engine.get().log("TIMING", action + " end");
             }, Math.max(start + 50, end));
         }
+    }
+
+    /** Agla/pichla saved source kholo. */
+    private void cycleSource(int dir) {
+        java.util.List<String[]> list = store.sources();
+        if (list.isEmpty()) { Toast.makeText(this, "Koi source nahi", Toast.LENGTH_SHORT).show(); return; }
+        String cur = store.source().equals("image") ? store.imageUri() : store.videoUri();
+        int idx = 0;
+        for (int i = 0; i < list.size(); i++) if (list.get(i)[1].equals(cur)) { idx = i; break; }
+        idx = (idx + dir + list.size()) % list.size();
+        String[] sc = list.get(idx);
+        if (preview == null) show("camera");
+        openUri(Uri.parse(sc[1]), sc[2]);
+    }
+
+    /** Screen-share mode: media poore screen par (video call mein screen share ke liye). */
+    private void screenShareMode() {
+        if (preview == null || preview.mode.equals("none")) {
+            Toast.makeText(this, "Pehle source chunein", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final FrameLayout fs = new FrameLayout(this);
+        fs.setBackgroundColor(Color.BLACK);
+        Preview big = new Preview(this);
+        big.zoom = 1f;
+        big.rotationDeg = store.rotation();
+        big.flipH = store.flipH();
+        big.flipV = store.flipV();
+        big.brightness = store.brightness();
+        big.contrast = store.contrast();
+        big.eyesOn = store.eyesOn();
+        big.mouthOn = store.mouthOn();
+        big.autoBlink = store.autoBlink();
+        big.blinkInterval = store.blinkInterval();
+        big.animSpeed = store.animSpeed();
+        if (store.source().equals("image") && !store.imageUri().isEmpty())
+            big.loadImage(Uri.parse(store.imageUri()));
+        else if (!store.videoUri().isEmpty()) { big.loadVideo(Uri.parse(store.videoUri())); big.play(); }
+
+        fs.addView(big, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        TextView exit = UiKit.body(this, "✕  Close", 14f, Color.WHITE);
+        exit.setPadding(dp(20), dp(40), dp(20), dp(20));
+        exit.setOnClickListener(v -> { big.release(); show("camera"); });
+        FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        elp.gravity = Gravity.TOP | Gravity.END;
+        fs.addView(exit, elp);
+
+        root.removeAllViews();
+        root.addView(fs, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        Toast.makeText(this, "Screen share mode — call mein screen share karein", Toast.LENGTH_LONG).show();
     }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }

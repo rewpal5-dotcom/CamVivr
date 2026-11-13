@@ -83,6 +83,13 @@ public class OverlayPanelService extends Service {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(i);
         }));
+        panel.addView(btn("▶  Play", v -> doControl(0)));
+        panel.addView(btn("⏸  Pause", v -> doControl(1)));
+        panel.addView(btn("■  Stop", v -> doControl(2)));
+        panel.addView(btn("↻  Restart", v -> doControl(3)));
+        panel.addView(btn("🔁  Loop", v -> doControl(4)));
+        panel.addView(btn("⏭  Next", v -> doControl(5)));
+        panel.addView(btn("⏮  Previous", v -> doControl(6)));
         panel.addView(btn("◉  Blink", v -> send("blink")));
         panel.addView(btn("▭  Mouth", v -> send("mouth")));
         panel.addView(btn("✕  Band karein", v -> stopSelf()));
@@ -130,6 +137,26 @@ public class OverlayPanelService extends Service {
         t.setPadding(4, 14, 4, 14);
         t.setOnClickListener(l);
         return t;
+    }
+
+    /** Floating panel se media engine ko control karo (same state). */
+    private void doControl(int what) {
+        Engine.MediaControl c = Engine.get().control();
+        if (c == null) {
+            android.widget.Toast.makeText(this, "CamVivr mein pehle media load karein",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        switch (what) {
+            case 0: c.play(); break;
+            case 1: c.pause(); break;
+            case 2: c.stop(); break;
+            case 3: c.restart(); break;
+            case 4: c.toggleLoop(); break;
+            case 5: c.next(); break;
+            case 6: c.previous(); break;
+        }
+        Engine.get().log("PANEL", "control " + what);
     }
 
     private void send(String action) {

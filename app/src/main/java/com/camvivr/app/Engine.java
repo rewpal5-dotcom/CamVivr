@@ -76,4 +76,19 @@ public class Engine {
     }
 
     public void clearLogs() { logs.clear(); }
+
+    /* ---------- media control bridge (floating panel <-> app) ---------- */
+    public interface MediaControl {
+        void play();
+        void pause();
+        void stop();
+        void restart();
+        void toggleLoop();
+        void next();
+        void previous();
+        boolean isPlaying();
+    }
+    private MediaControl control;
+    public void setControl(MediaControl c) { control = c; }
+    public MediaControl control() { return control; }
 }
