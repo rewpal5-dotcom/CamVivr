@@ -1,0 +1,1 @@
+# CamVivr proguard
