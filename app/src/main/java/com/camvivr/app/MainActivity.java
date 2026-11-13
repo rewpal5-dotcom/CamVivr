@@ -162,6 +162,11 @@ public class MainActivity extends Activity {
         c3.addView(open3, UiKit.matchWrap(12));
         box.addView(c3);
 
+        TextView diag = UiKit.muted(this, "Service: " + (OverlayPanelService.running ? "RUNNING" : "STOPPED")
+                + (Engine.get().error().isEmpty() ? "" : "  ·  Error: " + Engine.get().error()));
+        diag.setPadding(0, dp(10), 0, 0);
+        box.addView(diag);
+
         return wrap(UiKit.scroll(this, box));
     }
 
@@ -182,8 +187,10 @@ public class MainActivity extends Activity {
         up.addView(img);
         box.addView(up);
 
-        /* preview */
-        preview = new Preview(this);
+        /* preview — ek hi instance (dobara banane se video atak jaati thi) */
+        if (preview != null && preview.getParent() != null)
+            ((ViewGroup) preview.getParent()).removeView(preview);
+        if (preview == null) preview = new Preview(this);
         preview.zoom = store.zoom() / 100f;
         preview.rotationDeg = store.rotation();
         preview.flipH = store.flipH();

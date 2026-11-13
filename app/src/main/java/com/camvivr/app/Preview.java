@@ -63,6 +63,18 @@ public class Preview extends FrameLayout {
 
         texture = new TextureView(c);
         texture.setVisibility(GONE);
+        texture.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
+                if (pendingVideo != null) {
+                    Uri u = pendingVideo;
+                    pendingVideo = null;
+                    startPlayer(u);
+                }
+            }
+            public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) { }
+            public boolean onSurfaceTextureDestroyed(SurfaceTexture st) { return true; }
+            public void onSurfaceTextureUpdated(SurfaceTexture st) { }
+        });
         addView(texture, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         overlay = new OverlayView(c);
@@ -99,10 +111,25 @@ public class Preview extends FrameLayout {
     }
 
     /* ================= video ================= */
+    private Uri pendingVideo;
+
     public boolean loadVideo(Uri uri) {
         release();
+        mode = "video";
+        imgView.setVisibility(GONE);
+        texture.setVisibility(VISIBLE);
+        videoUri = uri.toString();
+        if (texture.getSurfaceTexture() == null) {
+            // view abhi attach nahi hui — surface aane par khud load hoga
+            pendingVideo = uri;
+            Engine.get().log("VIDEO", "surface ka intezaar");
+            return true;
+        }
+        return startPlayer(uri);
+    }
+
+    private boolean startPlayer(Uri uri) {
         try {
-            videoUri = uri.toString();
             player = new MediaPlayer();
             player.setDataSource(getContext(), uri);
             player.setSurface(new android.view.Surface(texture.getSurfaceTexture()));
@@ -122,11 +149,9 @@ public class Preview extends FrameLayout {
                 return true;
             });
             player.prepareAsync();
-            mode = "video";
-            imgView.setVisibility(GONE);
-            texture.setVisibility(VISIBLE);
             return true;
         } catch (Exception e) {
+            Engine.get().fail("video load fail: " + e.getMessage());
             return false;
         }
     }
