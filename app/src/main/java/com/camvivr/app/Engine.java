@@ -92,6 +92,9 @@ public class Engine {
         String mediaLabel();
         void rotate();
         void flip();
+        void zoomIn();
+        void zoomOut();
+        void center();
     }
     private MediaControl control;
     public void setControl(MediaControl c) { control = c; }

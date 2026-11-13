@@ -166,8 +166,10 @@ public class OverlayPanelService extends Service {
                 v -> head(-1, 0), v -> head(0, 0), v -> head(1, 0)));
         panel.addView(row3("PLAY", "↓", "LOOP",
                 v -> control(0), v -> head(0, 1), v -> control(4)));
-        panel.addView(row3("ROT", "FLIP", "OFF",
-                v -> control(7), v -> control(8), v -> control(2)));
+        panel.addView(row3("ZOOM −", "ROT", "ZOOM +",
+                v -> control(9), v -> control(7), v -> control(10)));
+        panel.addView(row3("FLIP", "CENTER", "OFF",
+                v -> control(8), v -> control(11), v -> control(2)));
 
         /* info line */
         infoLine = new TextView(this);
@@ -266,6 +268,9 @@ public class OverlayPanelService extends Service {
             case 4: c.toggleLoop(); break;
             case 7: c.rotate(); break;
             case 8: c.flip(); break;
+            case 9: c.zoomOut(); break;
+            case 10: c.zoomIn(); break;
+            case 11: c.center(); break;
         }
         Engine.get().log("PANEL", "action " + what);
     }

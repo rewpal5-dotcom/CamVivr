@@ -236,6 +236,20 @@ public class Preview extends FrameLayout {
     public void setHead(float x, float y, float rot) { face.headX = x; face.headY = y; face.headRot = rot; overlay.invalidate(); }
     public FaceAnim face() { return face; }
 
+    public void zoomBy(float delta) {
+        zoom = Math.max(0.4f, Math.min(3.0f, zoom + delta));
+        imgView.invalidate();
+        Engine.get().log("FRAME", "zoom " + String.format("%.2f", zoom));
+    }
+
+    public void centerFrame() {
+        zoom = 1f;
+        face.headX = 0; face.headY = 0; face.headRot = 0;
+        imgView.invalidate();
+        overlay.invalidate();
+        Engine.get().log("FRAME", "center");
+    }
+
     /* ---------- media info (asli) ---------- */
     public String mediaName = "";
     public int mediaW = 0, mediaH = 0;

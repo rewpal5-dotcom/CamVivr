@@ -126,6 +126,8 @@ public class Store {
         return list;
     }
 
+    public void clearSources() { prefs.edit().putString("sources", "[]").apply(); }
+
     public void removeSource(String uri) {
         try {
             JSONArray arr = new JSONArray(prefs.getString("sources", "[]"));

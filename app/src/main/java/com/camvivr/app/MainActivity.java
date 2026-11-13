@@ -72,6 +72,9 @@ public class MainActivity extends Activity {
                 boolean f = !store.flipH(); store.setFlipH(f);
                 if (preview != null) { preview.flipH = f; preview.invalidate(); }
             }
+            public void zoomIn() { if (preview != null) { preview.zoomBy(0.15f); store.setZoom((int) (preview.zoom * 100)); } }
+            public void zoomOut() { if (preview != null) { preview.zoomBy(-0.15f); store.setZoom((int) (preview.zoom * 100)); } }
+            public void center() { if (preview != null) { preview.centerFrame(); store.setZoom(100); } }
         });
 
         registerPanelReceiver();
@@ -243,6 +246,7 @@ public class MainActivity extends Activity {
         /* uploaded list */
         LinearLayout list = UiKit.card(this);
         list.addView(UiKit.title(this, "Uploaded media", 15));
+        list.addView(UiKit.muted(this, "Ek samay par ek hi media — naya upload purane ko replace karega"));
         if (store.sources().isEmpty()) list.addView(UiKit.muted(this, "Abhi kuch upload nahi"));
         for (final String[] m : store.sources()) {
             LinearLayout r = UiKit.row(this);
@@ -281,22 +285,40 @@ public class MainActivity extends Activity {
 
         boolean overlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this);
         perm.addView(permRow("Display over other apps", overlay, () -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:" + getPackageName())));
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("Display over other apps")
+                    .setMessage("Is permission se floating button screen par dikhta hai. "
+                              + "Aap ise kabhi bhi band kar sakte hain.")
+                    .setPositiveButton("Permission dein", (d, w) -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:" + getPackageName())));
+                    })
+                    .setNegativeButton("Nahi", null).show();
         }));
 
-        boolean notif = true;
-        perm.addView(permRow("Notifications (foreground service)", notif, () -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        boolean notif = Build.VERSION.SDK_INT < 33
+                || checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                   == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        perm.addView(permRow("Notifications", notif, () -> {
+            if (Build.VERSION.SDK_INT >= 33) {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 91);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Intent i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
                 i.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
                 startActivity(i);
             }
         }));
 
-        perm.addView(UiKit.muted(this, "Accessibility permission ki zaroorat nahi hai — "
-                + "ye app touch injection nahi karta."));
+        perm.addView(permRow("Gallery / files access", true, () ->
+                Toast.makeText(this, "Koi storage permission nahi maangi jaati — "
+                        + "file picker se sirf aapki chuni hui file padhi jaati hai", Toast.LENGTH_LONG).show()));
+
+        perm.addView(UiKit.muted(this, "Accessibility permission ki zaroorat nahi — "
+                + "ye app kisi doosre app ko control nahi karta."));
+        perm.addView(UiKit.muted(this, "Camera/Microphone permission bhi nahi maangi jaati — "
+                + "app camera hardware use nahi karta."));
+        perm.addView(UiKit.muted(this, "Saari permissions aap kabhi bhi phone settings se band kar sakte hain."));
         box.addView(perm);
 
         LinearLayout about = UiKit.card(this);
@@ -410,7 +432,29 @@ public class MainActivity extends Activity {
         try {
             getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         } catch (Exception ignored) { }
-        openUri(uri, req == REQ_IMAGE ? "image" : "video");
+        upload(uri, req == REQ_IMAGE ? "image" : "video");
+    }
+
+    /** Upload: file ko app ki private storage mein copy karta hai (permission expire nahi hoti). */
+    private Uri importToPrivate(Uri src, String type) {
+        try {
+            String name = displayName(src);
+            if (!name.contains(".")) name = name + (type.equals("image") ? ".jpg" : ".mp4");
+            java.io.File dir = new java.io.File(getFilesDir(), "media");
+            if (!dir.exists()) dir.mkdirs();
+            java.io.File out = new java.io.File(dir, name);
+            java.io.InputStream in = getContentResolver().openInputStream(src);
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
+            in.close(); fos.close();
+            Engine.get().log("STORAGE", "saved " + out.getName());
+            return Uri.fromFile(out);
+        } catch (Exception e) {
+            Engine.get().log("STORAGE", "copy fail: " + e.getMessage());
+            return src;
+        }
     }
 
     private void openUri(Uri uri, String type) {
@@ -420,14 +464,21 @@ public class MainActivity extends Activity {
             store.setSource(type);
             if (type.equals("image")) store.setImageUri(uri.toString());
             else store.setVideoUri(uri.toString());
-            String name = displayName(uri);
-            store.addSource(name, uri.toString(), type);
             if (type.equals("video")) preview.play();
-            Toast.makeText(this, "Load ho gaya", Toast.LENGTH_SHORT).show();
             go("media");
         } else {
             Toast.makeText(this, "Ye file khul nahi payi", Toast.LENGTH_LONG).show();
         }
+    }
+
+    /** Naya upload — purana replace ho jaata hai (ek samay par ek media). */
+    private void upload(Uri src, String type) {
+        Uri local = importToPrivate(src, type);
+        String name = displayName(local);
+        store.clearSources();
+        store.addSource(name, local.toString(), type);
+        openUri(local, type);
+        Toast.makeText(this, "Upload ho gaya: " + name, Toast.LENGTH_SHORT).show();
     }
 
     /** Gallery file ka asli naam. */
