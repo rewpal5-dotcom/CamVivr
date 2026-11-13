@@ -98,5 +98,70 @@ public class Store {
         return list;
     }
 
+    /* ---------- sources (multiple) ---------- */
+    public void addSource(String name, String uri, String type) {
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("sources", "[]"));
+            JSONArray out = new JSONArray();
+            JSONObject o = new JSONObject();
+            o.put("name", name); o.put("uri", uri); o.put("type", type);
+            out.put(o);
+            for (int i = 0; i < arr.length() && out.length() < 12; i++) {
+                JSONObject e = arr.getJSONObject(i);
+                if (!e.optString("uri").equals(uri)) out.put(e);
+            }
+            prefs.edit().putString("sources", out.toString()).apply();
+        } catch (JSONException ignored) { }
+    }
+
+    public List<String[]> sources() {
+        List<String[]> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("sources", "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                list.add(new String[]{o.optString("name"), o.optString("uri"), o.optString("type")});
+            }
+        } catch (JSONException ignored) { }
+        return list;
+    }
+
+    public void removeSource(String uri) {
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("sources", "[]"));
+            JSONArray out = new JSONArray();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject e = arr.getJSONObject(i);
+                if (!e.optString("uri").equals(uri)) out.put(e);
+            }
+            prefs.edit().putString("sources", out.toString()).apply();
+        } catch (JSONException ignored) { }
+    }
+
+    /* ---------- action timings ---------- */
+    public void addTiming(String action, int startMs, int endMs) {
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("timings", "[]"));
+            JSONObject o = new JSONObject();
+            o.put("action", action); o.put("start", startMs); o.put("end", endMs);
+            arr.put(o);
+            prefs.edit().putString("timings", arr.toString()).apply();
+        } catch (JSONException ignored) { }
+    }
+
+    public List<Object[]> timings() {
+        List<Object[]> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs.getString("timings", "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                list.add(new Object[]{o.optString("action"), o.optInt("start"), o.optInt("end")});
+            }
+        } catch (JSONException ignored) { }
+        return list;
+    }
+
+    public void clearTimings() { prefs.edit().putString("timings", "[]").apply(); }
+
     public void resetAll() { prefs.edit().clear().apply(); }
 }

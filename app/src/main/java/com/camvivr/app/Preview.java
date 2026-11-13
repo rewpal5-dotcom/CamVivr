@@ -80,6 +80,10 @@ public class Preview extends FrameLayout {
             if (is != null) is.close();
             if (bitmap == null) return false;
             mode = "image";
+            mediaW = bitmap.getWidth(); mediaH = bitmap.getHeight();
+            mediaDurationMs = 0; hasAudio = false;
+            Engine.get().set(Engine.State.READY);
+            Engine.get().log("SOURCE", "image " + mediaW + "x" + mediaH);
             texture.setVisibility(GONE);
             imgView.setVisibility(VISIBLE);
             face.detect(bitmap);
@@ -103,7 +107,20 @@ public class Preview extends FrameLayout {
             player.setDataSource(getContext(), uri);
             player.setSurface(new android.view.Surface(texture.getSurfaceTexture()));
             player.setLooping(true);
-            player.setOnPreparedListener(mp -> { prepared = true; mp.start(); });
+            player.setOnPreparedListener(mp -> {
+                prepared = true;
+                mediaW = mp.getVideoWidth(); mediaH = mp.getVideoHeight();
+                mediaDurationMs = mp.getDuration();
+                hasAudio = true;
+                Engine.get().set(Engine.State.READY);
+                Engine.get().log("SOURCE", "video " + mediaW + "x" + mediaH + " " + mediaDurationMs + "ms");
+                mp.start();
+                Engine.get().set(Engine.State.PLAYING);
+            });
+            player.setOnErrorListener((mp, what, extra) -> {
+                Engine.get().fail("Video decoder error (" + what + "/" + extra + ")");
+                return true;
+            });
             player.prepareAsync();
             mode = "video";
             imgView.setVisibility(GONE);
@@ -164,6 +181,7 @@ public class Preview extends FrameLayout {
                 face.mouthOpen = (float) (0.5 + 0.5 * Math.sin(t / 400.0 * speed));
             }
             overlay.invalidate();
+            Engine.get().frame();
             h.postDelayed(this, 33);
         }
     };
@@ -178,6 +196,44 @@ public class Preview extends FrameLayout {
     public void setSmile(float v) { face.smile = v; overlay.invalidate(); }
     public void setHead(float x, float y, float rot) { face.headX = x; face.headY = y; face.headRot = rot; overlay.invalidate(); }
     public FaceAnim face() { return face; }
+
+    /* ---------- media info (asli) ---------- */
+    public String mediaName = "";
+    public int mediaW = 0, mediaH = 0;
+    public long mediaDurationMs = 0;
+    public boolean hasAudio = false;
+
+    public String infoLine() {
+        if (mode.equals("none")) return "No source";
+        if (mode.equals("image"))
+            return mediaW + "×" + mediaH + " · image";
+        return mediaW + "×" + mediaH + " · " + (mediaDurationMs / 1000) + "s · "
+                + (hasAudio ? "audio" : "no audio");
+    }
+
+    /** Current frame ko PNG mein save karo (asli snapshot). */
+    public boolean snapshot(java.io.File out) {
+        try {
+            int w = getWidth(), h = getHeight();
+            if (w <= 0 || h <= 0) return false;
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bmp);
+            if (mode.equals("image")) {
+                imgView.draw(c);
+            } else {
+                Bitmap frame = texture.getBitmap(w, h);
+                if (frame != null) c.drawBitmap(frame, 0, 0, null);
+            }
+            overlay.draw(c);
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+            bmp.compress(Bitmap.CompressFormat.PNG, 95, fos);
+            fos.close();
+            bmp.recycle();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     /* ================= views ================= */
     private class ImageView extends View {

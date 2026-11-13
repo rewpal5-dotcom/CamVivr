@@ -125,6 +125,13 @@ public class MainActivity extends Activity {
         boolean cam = preview != null && !preview.mode.equals("none");
         st.addView(statusRow("Preview", cam ? "Running" : "Stopped", cam));
         st.addView(statusRow("Source", sourceLabel(), !store.source().equals("none")));
+        st.addView(statusRow("Engine", Engine.get().state().name(),
+                Engine.get().state() == Engine.State.PLAYING || Engine.get().state() == Engine.State.READY));
+        st.addView(statusRow("Resolution", preview != null && preview.mediaW > 0
+                ? preview.mediaW + "×" + preview.mediaH : "—", preview != null && preview.mediaW > 0));
+        st.addView(statusRow("FPS", String.valueOf(Engine.get().fps()), Engine.get().fps() > 0));
+        st.addView(statusRow("Floating panel", OverlayPanelService.running ? "ON" : "OFF", OverlayPanelService.running));
+        st.addView(statusRow("Streaming", "Not available", false));
         st.addView(UiKit.muted(this, "External virtual camera: "
                 + (ExternalCamera.supported() ? "supported" : "not supported on this device")));
         box.addView(st);
@@ -212,6 +219,12 @@ public class MainActivity extends Activity {
         preview.blinkInterval = store.blinkInterval();
         preview.animSpeed = store.animSpeed();
 
+        if (preview != null) {
+            TextView info = UiKit.muted(this, "Source: " + preview.infoLine());
+            info.setPadding(0, 0, 0, 10);
+            box.addView(info);
+        }
+
         LinearLayout srcRow = UiKit.row(this);
         Button pickImg = UiKit.button(this, "🖼  Photo", UiKit.BLUE, Color.WHITE);
         pickImg.setLayoutParams(UiKit.weight(1f));
@@ -223,6 +236,27 @@ public class MainActivity extends Activity {
         pickVid.setOnClickListener(v -> pick(REQ_VIDEO, "video/*"));
         srcRow.addView(pickVid);
         box.addView(srcRow);
+
+        /* source manager */
+        LinearLayout sm = UiKit.card(this);
+        sm.addView(UiKit.title(this, "Sources", 15));
+        if (store.sources().isEmpty()) sm.addView(UiKit.muted(this, "Abhi koi source save nahi"));
+        for (final String[] sc : store.sources()) {
+            LinearLayout r = UiKit.row(this);
+            TextView t = UiKit.body(this, "• " + sc[0], 13f, UiKit.TEXT);
+            t.setLayoutParams(UiKit.weight(1f));
+            t.setOnClickListener(v -> openUri(Uri.parse(sc[1]), sc[2]));
+            r.addView(t);
+            TextView del = UiKit.body(this, "✕", 14f, UiKit.RED);
+            del.setPadding(16, 8, 8, 8);
+            del.setOnClickListener(v -> { store.removeSource(sc[1]); show("camera"); });
+            r.addView(del);
+            sm.addView(r);
+        }
+        Button snap = UiKit.button(this, "📸  Snapshot save", 0xFF1B2A3E, UiKit.TEXT);
+        snap.setOnClickListener(v -> snapshot());
+        sm.addView(snap, UiKit.matchWrap(12));
+        box.addView(sm);
 
         /* video controls */
         LinearLayout vid = UiKit.card(this);
@@ -324,6 +358,23 @@ public class MainActivity extends Activity {
         head.addView(h1);
         box.addView(head);
 
+        LinearLayout timing = UiKit.card(this);
+        timing.addView(UiKit.title(this, "Action timing", 15));
+        timing.addView(UiKit.muted(this, "Blink / Mouth / Head ke liye start-end time (ms)"));
+        for (Object[] tm : store.timings()) {
+            timing.addView(UiKit.body(this, "• " + tm[0] + "  " + tm[1] + " → " + tm[2]
+                    + " ms  (" + ((int) tm[2] - (int) tm[1]) + " ms)", 12.5f, UiKit.TEXT));
+        }
+        LinearLayout tr = UiKit.row(this);
+        tr.addView(smallBtn("+ Blink 500-900", () -> { store.addTiming("Blink", 500, 900); show("control"); }));
+        tr.addView(smallBtn("+ Mouth 0-1500", () -> { store.addTiming("Mouth", 0, 1500); show("control"); }));
+        timing.addView(tr);
+        LinearLayout tr2 = UiKit.row(this);
+        tr2.addView(smallBtn("▶ Run sequence", this::runTimings));
+        tr2.addView(smallBtn("Clear", () -> { store.clearTimings(); show("control"); }));
+        timing.addView(tr2);
+        box.addView(timing);
+
         LinearLayout fl = UiKit.card(this);
         fl.addView(UiKit.title(this, "Floating panel", 15));
         fl.addView(UiKit.muted(this, "Game/app ke upar chhota control panel"));
@@ -424,6 +475,19 @@ public class MainActivity extends Activity {
                 13f, UiKit.MUTED));
         box.addView(about);
 
+        LinearLayout logsCard = UiKit.card(this);
+        logsCard.addView(UiKit.title(this, "Diagnostics", 15));
+        int shown = 0;
+        for (Engine.LogLine l : Engine.get().logs()) {
+            logsCard.addView(UiKit.body(this, l.time + "  [" + l.tag + "]  " + l.msg, 11.5f, UiKit.MUTED));
+            if (++shown >= 12) break;
+        }
+        if (shown == 0) logsCard.addView(UiKit.muted(this, "Abhi koi log nahi"));
+        Button clr = UiKit.button(this, "Clear logs", 0xFF1B2A3E, UiKit.TEXT);
+        clr.setOnClickListener(v -> { Engine.get().clearLogs(); show("settings"); });
+        logsCard.addView(clr, UiKit.matchWrap(10));
+        box.addView(logsCard);
+
         LinearLayout reset = UiKit.card(this);
         reset.addView(UiKit.title(this, "Reset", 15));
         Button r = UiKit.button(this, "Reset app data", 0xFF3A1E22, UiKit.RED);
@@ -462,6 +526,50 @@ public class MainActivity extends Activity {
     }
 
     interface OnValue { void onValue(int v); }
+
+    private void snapshot() {
+        if (preview == null || preview.mode.equals("none")) {
+            Toast.makeText(this, "Pehle koi source chunein", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            java.io.File dir = new java.io.File(getExternalFilesDir(null), "snapshots");
+            if (!dir.exists()) dir.mkdirs();
+            java.io.File out = new java.io.File(dir, "camvivr_" + System.currentTimeMillis() + ".png");
+            if (preview.snapshot(out)) {
+                Engine.get().log("SNAPSHOT", out.getName());
+                Toast.makeText(this, "Save: " + out.getAbsolutePath(), Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "Snapshot fail", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Snapshot error", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void runTimings() {
+        if (preview == null) { Toast.makeText(this, "Pehle Camera tab kholein", Toast.LENGTH_SHORT).show(); return; }
+        java.util.List<Object[]> list = store.timings();
+        if (list.isEmpty()) { Toast.makeText(this, "Koi timing nahi", Toast.LENGTH_SHORT).show(); return; }
+        Toast.makeText(this, "Sequence chalu (" + list.size() + " actions)", Toast.LENGTH_SHORT).show();
+        for (Object[] tm : list) {
+            final String action = (String) tm[0];
+            final int start = (int) tm[1], end = (int) tm[2];
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if (preview == null) return;
+                Engine.get().log("TIMING", action + " start");
+                if (action.equalsIgnoreCase("Blink")) preview.blinkOnce();
+                else if (action.equalsIgnoreCase("Mouth")) preview.setMouthOpen(1f);
+                else preview.setHead(0, -1, 0);
+            }, Math.max(0, start));
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if (preview == null) return;
+                if (action.equalsIgnoreCase("Mouth")) preview.setMouthOpen(0f);
+                else if (!action.equalsIgnoreCase("Blink")) preview.setHead(0, 0, 0);
+                Engine.get().log("TIMING", action + " end");
+            }, Math.max(start + 50, end));
+        }
+    }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
