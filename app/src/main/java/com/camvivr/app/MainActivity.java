@@ -1,7 +1,9 @@
 package com.camvivr.app;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -52,7 +54,24 @@ public class MainActivity extends Activity {
             public void next() { cycleSource(1); }
             public void previous() { cycleSource(-1); }
             public boolean isPlaying() { return Engine.get().state() == Engine.State.PLAYING; }
+            public int positionMs() { return preview == null ? 0 : preview.position(); }
+            public int durationMs() { return preview == null ? 0 : (int) preview.mediaDurationMs; }
+            public String mediaLabel() {
+                if (preview == null || preview.mode.equals("none")) return "Koi media nahi";
+                String u = preview.mode.equals("image") ? store.imageUri() : store.videoUri();
+                String n = u.substring(u.lastIndexOf('/') + 1);
+                return n.isEmpty() ? preview.mode : n;
+            }
+            public void rotate() {
+                int r = (store.rotation() + 90) % 360; store.setRotation(r);
+                if (preview != null) { preview.rotationDeg = r; preview.invalidate(); }
+            }
+            public void flip() {
+                boolean f = !store.flipH(); store.setFlipH(f);
+                if (preview != null) { preview.flipH = f; preview.invalidate(); }
+            }
         });
+        registerPanelReceiver();
         show("home");
     }
 
@@ -81,8 +100,8 @@ public class MainActivity extends Activity {
         navBar.setOrientation(LinearLayout.HORIZONTAL);
         navBar.setBackgroundColor(UiKit.BG2);
         navBar.setPadding(0, 8, 0, 12);
-        String[][] items = {{"home", "Home"}, {"camera", "Camera"}, {"control", "Control"},
-                {"virtual", "Virtual"}, {"settings", "Settings"}};
+        String[][] items = {{"home", "Home"}, {"media", "Media"}, {"virtual", "Output"},
+                {"control", "Floating"}, {"settings", "Settings"}};
         for (String[] it : items) {
             final String id = it[0];
             TextView t = new TextView(this);
@@ -110,80 +129,147 @@ public class MainActivity extends Activity {
         return wrap;
     }
 
-    /* ================= HOME ================= */
+    /* ================= HOME (mockup style) ================= */
     private View buildHome() {
         LinearLayout box = UiKit.column(this);
 
+        /* header */
         LinearLayout head = UiKit.row(this);
-        TextView logo = UiKit.title(this, "C", 30);
+        TextView logo = UiKit.title(this, "C", 26);
         logo.setTextColor(Color.WHITE);
         logo.setGravity(Gravity.CENTER);
         GradientDrawable g = new GradientDrawable();
         g.setColor(UiKit.BLUE);
-        g.setCornerRadius(22f);
+        g.setCornerRadius(18f);
         logo.setBackground(g);
-        logo.setWidth(dp(56)); logo.setHeight(dp(56));
+        logo.setWidth(dp(48)); logo.setHeight(dp(48));
         head.addView(logo);
         LinearLayout names = new LinearLayout(this);
         names.setOrientation(LinearLayout.VERTICAL);
-        names.setPadding(dp(14), 0, 0, 0);
+        names.setPadding(dp(12), 0, 0, 0);
         names.addView(UiKit.title(this, "CamVivr", 22));
-        names.addView(UiKit.muted(this, "Your Camera, Your Control · v1.0"));
+        names.addView(UiKit.muted(this, "Your Media, Your Virtual Camera"));
         head.addView(names);
         box.addView(head);
 
-        /* status */
-        LinearLayout st = UiKit.card(this);
-        st.addView(UiKit.title(this, "Status", 15));
-        boolean svc = OverlayPanelService.running;
-        st.addView(statusRow("Service", svc ? "Active" : "Inactive", svc));
-        boolean cam = preview != null && !preview.mode.equals("none");
-        st.addView(statusRow("Preview", cam ? "Running" : "Stopped", cam));
-        st.addView(statusRow("Source", sourceLabel(), !store.source().equals("none")));
-        st.addView(statusRow("Engine", Engine.get().state().name(),
-                Engine.get().state() == Engine.State.PLAYING || Engine.get().state() == Engine.State.READY));
-        st.addView(statusRow("Resolution", preview != null && preview.mediaW > 0
-                ? preview.mediaW + "×" + preview.mediaH : "—", preview != null && preview.mediaW > 0));
-        st.addView(statusRow("FPS", String.valueOf(Engine.get().fps()), Engine.get().fps() > 0));
-        st.addView(statusRow("Floating panel", OverlayPanelService.running ? "ON" : "OFF", OverlayPanelService.running));
-        st.addView(statusRow("Streaming", "Not available", false));
-        st.addView(UiKit.muted(this, "External virtual camera: "
-                + (ExternalCamera.supported() ? "supported" : "not supported on this device")));
-        box.addView(st);
+        /* STEP 1 — floating button */
+        LinearLayout step1 = UiKit.card(this);
+        LinearLayout s1t = UiKit.row(this);
+        TextView n1 = UiKit.title(this, "Step 1 · Floating Button", 15);
+        n1.setLayoutParams(UiKit.weight(1f));
+        s1t.addView(n1);
+        TextView s1s = UiKit.body(this, OverlayPanelService.running ? "ON" : "OFF", 12f,
+                OverlayPanelService.running ? UiKit.GREEN : UiKit.AMBER);
+        s1s.setTypeface(null, android.graphics.Typeface.BOLD);
+        s1t.addView(s1s);
+        step1.addView(s1t);
+        Button fb = UiKit.button(this,
+                OverlayPanelService.running ? "Floating Button band karein" : "▶  Floating Button ON karein",
+                OverlayPanelService.running ? 0xFF3A1E22 : UiKit.BLUE, Color.WHITE);
+        fb.setOnClickListener(v -> toggleFloating());
+        step1.addView(fb, UiKit.matchWrap(12));
+        step1.addView(UiKit.muted(this, "Iske baad screen par gol button aayega — wahi se saara control chalega"));
+        box.addView(step1);
 
-        /* quick actions */
-        LinearLayout row = UiKit.row(this);
-        Button start = UiKit.button(this, "▶  Quick Start", UiKit.BLUE, Color.WHITE);
-        start.setLayoutParams(UiKit.weight(1f));
-        start.setOnClickListener(v -> {
-            if (store.source().equals("none")) { Toast.makeText(this, "Pehle Camera tab se source chunein", Toast.LENGTH_SHORT).show(); show("camera"); return; }
-            show("camera");
-        });
-        row.addView(start);
-        row.addView(UiKit.spacer(this, 12, 1));
-        Button stop = UiKit.button(this, "■  Quick Stop", 0xFF1B2A3E, UiKit.TEXT);
+        /* STEP 2 — media */
+        LinearLayout step2 = UiKit.card(this);
+        step2.addView(UiKit.title(this, "Step 2 · Media chunein", 15));
+        LinearLayout r2 = UiKit.row(this);
+        Button sv = UiKit.button(this, "🎬  Video", 0xFF1B2A3E, UiKit.TEXT);
+        sv.setLayoutParams(UiKit.weight(1f));
+        sv.setOnClickListener(v -> pick(REQ_VIDEO, "video/*"));
+        r2.addView(sv);
+        r2.addView(UiKit.spacer(this, 10, 1));
+        Button si = UiKit.button(this, "🖼  Photo", 0xFF1B2A3E, UiKit.TEXT);
+        si.setLayoutParams(UiKit.weight(1f));
+        si.setOnClickListener(v -> pick(REQ_IMAGE, "image/*"));
+        r2.addView(si);
+        step2.addView(r2, UiKit.matchWrap(12));
+        box.addView(step2);
+
+        /* current source */
+        LinearLayout cur = UiKit.card(this);
+        cur.addView(UiKit.title(this, "Current source", 15));
+        String label = preview != null && !preview.mode.equals("none")
+                ? Engine.get().control() != null ? Engine.get().control().mediaLabel() : "Loaded"
+                : (store.source().equals("none") ? "Koi media nahi" : sourceLabel() + " selected");
+        cur.addView(UiKit.body(this, label, 15f,
+                store.source().equals("none") ? UiKit.MUTED : UiKit.TEXT));
+        cur.addView(UiKit.muted(this, preview != null && !preview.mode.equals("none")
+                ? preview.infoLine() : "Camera tab mein preview dekhein"));
+        Button openCam = UiKit.button(this, "Camera kholen  ›", 0xFF123542, UiKit.BLUE_L);
+        openCam.setOnClickListener(v -> show("camera"));
+        cur.addView(openCam, UiKit.matchWrap(10));
+        box.addView(cur);
+
+        /* quick controls */
+        LinearLayout qc = UiKit.card(this);
+        qc.addView(UiKit.title(this, "Quick controls", 15));
+        LinearLayout qr = UiKit.row(this);
+        Button play = UiKit.button(this, "Play", UiKit.GREEN, Color.WHITE);
+        play.setLayoutParams(UiKit.weight(1f));
+        play.setOnClickListener(v -> { Engine.MediaControl c = Engine.get().control(); if (c != null) c.play(); });
+        qr.addView(play);
+        qr.addView(UiKit.spacer(this, 8, 1));
+        Button pause = UiKit.button(this, "Pause", UiKit.BLUE, Color.WHITE);
+        pause.setLayoutParams(UiKit.weight(1f));
+        pause.setOnClickListener(v -> { Engine.MediaControl c = Engine.get().control(); if (c != null) c.pause(); });
+        qr.addView(pause);
+        qr.addView(UiKit.spacer(this, 8, 1));
+        Button stop = UiKit.button(this, "Stop", UiKit.RED, Color.WHITE);
         stop.setLayoutParams(UiKit.weight(1f));
-        stop.setOnClickListener(v -> {
-            if (preview != null) preview.release();
-            Toast.makeText(this, "Preview band", Toast.LENGTH_SHORT).show();
-            show("home");
-        });
-        row.addView(stop);
-        box.addView(row, UiKit.matchWrap(6));
+        stop.setOnClickListener(v -> { Engine.MediaControl c = Engine.get().control(); if (c != null) c.stop(); });
+        qr.addView(stop);
+        qc.addView(qr, UiKit.matchWrap(12));
+        box.addView(qc);
 
-        /* recent */
-        LinearLayout rec = UiKit.card(this);
-        rec.addView(UiKit.title(this, "Recent files", 15));
-        if (store.recent().isEmpty()) rec.addView(UiKit.muted(this, "Abhi koi file nahi"));
-        for (final String[] r : store.recent()) {
-            TextView t = UiKit.body(this, "• " + r[0] + "  (" + r[2] + ")", 13f, UiKit.TEXT);
-            t.setPadding(0, 10, 0, 10);
-            t.setOnClickListener(v -> openUri(Uri.parse(r[1]), r[2]));
-            rec.addView(t);
-        }
-        box.addView(rec);
+        /* grid buttons */
+        LinearLayout grid1 = UiKit.row(this);
+        grid1.addView(gridBtn("🖼  Select Image", () -> pick(REQ_IMAGE, "image/*")));
+        grid1.addView(UiKit.spacer(this, 10, 1));
+        grid1.addView(gridBtn("🎬  Select Video", () -> pick(REQ_VIDEO, "video/*")));
+        box.addView(grid1, UiKit.matchWrap(0));
+
+        LinearLayout grid2 = UiKit.row(this);
+        grid2.addView(gridBtn("📁  My Media", () -> show("media")));
+        grid2.addView(UiKit.spacer(this, 10, 1));
+        grid2.addView(gridBtn("🔄  Floating Controls", this::toggleFloating));
+        box.addView(grid2, UiKit.matchWrap(10));
+
+        LinearLayout grid3 = UiKit.row(this);
+        grid3.addView(gridBtn("⚙  Settings", () -> show("settings")));
+        grid3.addView(UiKit.spacer(this, 10, 1));
+        grid3.addView(gridBtn("❓  Help & Support", () -> show("virtual")));
+        box.addView(grid3, UiKit.matchWrap(10));
+
+        /* bottom stats */
+        LinearLayout stats = UiKit.row(this);
+        stats.setBackground(UiKit.round(UiKit.BG2, 18, UiKit.LINE));
+        stats.setPadding(dp(16), dp(12), dp(16), dp(12));
+        stats.addView(statCol("Resolution", preview != null && preview.mediaW > 0
+                ? preview.mediaW + "x" + preview.mediaH : "—"));
+        stats.addView(statCol("FPS", String.valueOf(Engine.get().fps())));
+        stats.addView(statCol("Mode", sourceLabel()));
+        box.addView(stats, UiKit.matchWrap(8));
 
         return padded(UiKit.scroll(this, box));
+    }
+
+    private Button gridBtn(String label, Runnable r) {
+        Button b = UiKit.button(this, label, UiKit.CARD, UiKit.TEXT);
+        b.setTextSize(13f);
+        b.setLayoutParams(UiKit.weight(1f));
+        b.setOnClickListener(v -> r.run());
+        return b;
+    }
+
+    private LinearLayout statCol(String k, String v) {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setLayoutParams(UiKit.weight(1f));
+        c.addView(UiKit.body(this, k, 10.5f, UiKit.MUTED));
+        c.addView(UiKit.body(this, v, 14f, UiKit.TEXT));
+        return c;
     }
 
     private LinearLayout statusRow(String name, String value, boolean ok) {
@@ -764,8 +850,43 @@ public class MainActivity extends Activity {
         }
     }
 
+    private android.content.BroadcastReceiver panelReceiver;
+    private boolean receiverOn = false;
+
+    private void registerPanelReceiver() {
+        if (receiverOn) return;
+        panelReceiver = new android.content.BroadcastReceiver() {
+            @Override public void onReceive(android.content.Context ctx, Intent it) {
+                String cmd = it.getStringExtra("cmd");
+                if (cmd == null || preview == null) return;
+                if (cmd.equals("eyes")) {
+                    store.setEyesOn(!store.eyesOn());
+                    preview.eyesOn = store.eyesOn();
+                    Toast.makeText(MainActivity.this, "Eyes: " + (store.eyesOn() ? "ON" : "OFF"), Toast.LENGTH_SHORT).show();
+                } else if (cmd.equals("mouth")) {
+                    store.setMouthOn(!store.mouthOn());
+                    preview.mouthOn = store.mouthOn();
+                    Toast.makeText(MainActivity.this, "Mouth: " + (store.mouthOn() ? "ON" : "OFF"), Toast.LENGTH_SHORT).show();
+                } else if (cmd.startsWith("head:")) {
+                    String[] xy = cmd.substring(5).split(",");
+                    preview.setHead(Float.parseFloat(xy[0]), Float.parseFloat(xy[1]), 0);
+                }
+            }
+        };
+        IntentFilter f = new IntentFilter("com.camvivr.app.ACTION");
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(panelReceiver, f, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(panelReceiver, f);
+        }
+        receiverOn = true;
+    }
+
     @Override
     protected void onDestroy() {
+        if (receiverOn && panelReceiver != null) {
+            try { unregisterReceiver(panelReceiver); } catch (Exception ignored) { }
+        }
         if (preview != null) preview.release();
         super.onDestroy();
     }

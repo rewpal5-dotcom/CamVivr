@@ -87,6 +87,11 @@ public class Engine {
         void next();
         void previous();
         boolean isPlaying();
+        int positionMs();
+        int durationMs();
+        String mediaLabel();
+        void rotate();
+        void flip();
     }
     private MediaControl control;
     public void setControl(MediaControl c) { control = c; }
